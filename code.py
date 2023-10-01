@@ -1,4 +1,5 @@
 import os
+import gc
 import ssl
 import time
 
@@ -20,8 +21,6 @@ from adafruit_bitmap_font import bitmap_font
 from adafruit_display_shapes.rect import Rect
 from adafruit_display_shapes.circle import Circle
 from adafruit_datetime import datetime, date, timedelta
-
-
 
 import ws7in5b
 
@@ -70,11 +69,13 @@ class Event:
     byday: int
     count: int
     interval: int
+    is_important: bool = False
 
     def __init__(self) -> None:
         pass
 
-
+    def __str__(self) -> str:
+        return self.title + ' (' + (str(self.start_time) if self.start_time else "-") + ' - ' + (str(self.end_time) if self.end_time else "-") + ', repeat ' + (str(self.frequency) if hasattr(self, 'frequency') and self.frequency else "-") + ')'
 
 def show_header(ntp, header_y):
     header_group = displayio.Group()
@@ -120,29 +121,54 @@ def zeige_tag(date: date, lbl: str):
     tag_group.append(tag_header_label)
     return tag_group
 
-def zeige_termin(startzeit: adafruit_datetime.time | None, person: list[str], titel: str):
+def zeige_person_label(att: str):
+    p_group = displayio.Group()
+    circ = Circle(18, 18, 18, fill=0x000000)
+    p_group.append(circ)
+    person_label = label.Label(label_person_font, text=att, color=0xFFFFFF)
+    person_label.anchor_point = (0.5, 0.5)
+    person_label.anchored_position = (18, 18)
+    p_group.append(person_label)
+    return p_group
+
+def zeige_stunde(titel: str, is_important: bool) -> displayio.Group:
+    s_group = displayio.Group()
+    fill_color = 0x000000
+    text_color = 0x000000
+    bar = Rect(14, 0, 8, 44, fill=0x000000)
+    s_group.append(bar)
+    rect = Rect(45, 0, 218 - 45, 36, outline=0x000000)
+    if is_important:
+        fill_color = 0xFF0000
+        text_color = 0xFFFFFF
+        rect = Rect(45, 0, 218 - 45, 36, outline=0x000000, fill=fill_color)
+    s_group.append(rect)
+    title_label = label_with_max_width(titel, 80, 218 - 45 - 10, text_color)
+    s_group.append(title_label)
+    return s_group
+
+def zeige_termin(startzeit: adafruit_datetime.time | None, person: list[str], titel: str, is_important: bool):
+    print("showing '" + titel + "': " + str(startzeit) + ' max width ' + str(218 - len(person) * 36 - 10) + " attendees: " + str(person))
+    gc.collect()
     termin_group = displayio.Group()
     px = 18
     label_color = 0xFFFFFF
-    rect = Rect(px + (len(person) - 1) * 36, 0, 200 - (len(person) - 1) * 36, 36, fill=0xFF0000, outline=0x000000)
+    rect = Rect(max(px + (len(person) - 1) * 36, 0), 0, max(200 - max((len(person) - 1) * 36, -18), 10), 36, fill=0xFF0000, outline=0x000000)
     if startzeit is not None and (startzeit.hour > 0 or startzeit.minute > 0):
         px = 64
-        label_color = 0x000000
-        rect = Rect(px, 0, 218 - px, 36, outline=0x000000)
+        if not is_important:
+            label_color = 0x000000
+            rect = Rect(px, 0, 218 - px, 36, outline=0x000000)
         timestr = prefix_date(startzeit.hour) + ":" + prefix_date(startzeit.minute)
         time_label = label.Label(default_font, text=timestr, color=label_color)
         time_label.anchor_point = (0.0, 0.5)
         time_label.anchored_position = (0, 18)
         termin_group.append(time_label)
     termin_group.append(rect)
-    
     for att in person:
-        circ = Circle(px, 18, 18, fill=0x000000)
-        termin_group.append(circ)
-        person_label = label.Label(label_person_font, text=att, color=0xFFFFFF)
-        person_label.anchor_point = (0.5, 0.5)
-        person_label.anchored_position = (px, 18)
-        termin_group.append(person_label)
+        pg = zeige_person_label(att)
+        pg.x = px - 18
+        termin_group.append(pg)
         px += 36
     title_label = label_with_max_width(titel, px, 218 - len(person) * 36 - 10, label_color)
     termin_group.append(title_label)
@@ -151,7 +177,7 @@ def zeige_termin(startzeit: adafruit_datetime.time | None, person: list[str], ti
 def label_with_max_width(titel: str, px: int, max_width: int, label_color: int):
     while True:
         title_label = label.Label(default_font, text=titel, color=label_color)
-        if title_label.width <= max_width:
+        if title_label.width <= max(max_width, 20):
             break
         else:
             pos = titel.rfind(" ")
@@ -159,7 +185,7 @@ def label_with_max_width(titel: str, px: int, max_width: int, label_color: int):
                 pos = len(titel) - 5
             titel = titel[:pos] + "..."
     title_label.anchor_point = (0.5, 0.5)
-    title_label.anchored_position = (int(100+px/2), 18)
+    title_label.anchored_position = (px + 9 + int((max_width - px)/2), 18)
     return title_label
 
 def zeige_kalender(mon: int, year: int, current_day: int, persons: list[str], termine: list[Event], ferien: list[Event]):
@@ -264,31 +290,37 @@ event_start_time = re.compile("DTSTART(;TZID=.+?)*(;VALUE=DATE)*:([0-9]+)T*([0-9
 event_end_time = re.compile("DTEND(;TZID=.+?)*(;VALUE=DATE)*:([0-9]+)T*([0-9]+)*")
 event_summary = re.compile("SUMMARY:(.+)")
 event_frequency = re.compile("RRULE:FREQ=(WEEKLY|DAILY|MONTHLY|YEARLY);(UNTIL=([0-9]+)T*([0-9]+)*Z*;)*(COUNT=([0-9]+);*)*(INTERVAL=([0-9]+);*)*(BYDAY=(.+))*")
-event_exdate = re.compile("EXDATE:([0-9]+T[0-9]+,*)+")
-
+event_exdate = re.compile("EXDATE:(([0-9]+T[0-9]+,*)+)")
+event_color = re.compile("COLOR:#([A-F0-9]+)")
+event_date = re.compile("([0-9]+)T*([0-9]+)*Z*")
 
 def start_time(event: Event):
     return event.start_time
 
-def parse_ical(text: str, mon: int, year: int) -> list[Event]:
+def append_event(events: list[Event], event: Event, current_day: datetime):
+    if (event.start_time.year == current_day.year and event.start_time.month == current_day.month) \
+        or (event.start_time > current_day and event.start_time < current_day + timedelta(days=2)):
+            print("saving event " + str(event))
+            events.append(event)
+
+def parse_ical(text: str, current_day: datetime) -> list[Event]:
     lines = text.splitlines()
     event = None
     events = []
     for line in lines:
         if event_start.match(line):
-            print("Event")
+            print("----EVENT----")
             event = Event()
         if event_end.match(line) and event is not None and hasattr(event, "start_time") and event.start_time is not None:
             if not hasattr(event, "attendent"):
                 event.attendent = ["AS", "AN", "LU"]
-            if event.start_time.year == year and event.start_time.month == mon:
-                events.append(event)
+            append_event(events, event, current_day)
             if hasattr(event, "frequency") and event.frequency is not None:
-                print("duplicate event " + event.title)
+                print("repeat event " + event.title)
                 count = 1
                 dt = event.start_time
                 while True:
-                    if (hasattr(event, 'count') and event.count is not None and event.count < count) or (hasattr(event, 'until') and event.until is not None and event.until < dt) or (dt > datetime(year=year, month=mon, day=1) + timedelta(days=31)):
+                    if (hasattr(event, 'count') and event.count is not None and event.count < count) or (hasattr(event, 'until') and event.until is not None and event.until < dt) or (dt > datetime(year=current_day.year, month=current_day.month, day=1, tzinfo=timezone) + timedelta(days=31)):
                         break
                     interval = 1
                     if hasattr(event, 'interval') and event.interval is not None:
@@ -302,19 +334,24 @@ def parse_ical(text: str, mon: int, year: int) -> list[Event]:
                     duplicate.start_time = dt
                     duplicate.end_time = dt + timedelta(seconds=int(event.end_time.timestamp() - event.start_time.timestamp()))
                     duplicate.attendent = event.attendent
-                    if duplicate.start_time.year == year and duplicate.start_time.month == mon:
-                        events.append(duplicate)
-                    else:
-                        pass
+                    duplicate.is_important = event.is_important
+                    excl = False
+                    if hasattr(event, 'exclude'):
+                        for ex_date in event.exclude:
+                            if ex_date.date() == duplicate.start_time.date():
+                                excl = True
+                                print("exclude " + str(ex_date))
+                    if not excl:
+                        append_event(events, duplicate, current_day)
                     count += 1
                 pass
             if event.end_time is not None and event.end_time.date != event.start_time.date:
                 #duplicate event for every active day
                 add_days = 1
-                print("duplicate event " + event.title)
+                print("duplicate event for duration " + event.title)
                 while True:
                     day = event.start_time + timedelta(days=add_days)
-                    day = datetime.combine(day.date(), time=adafruit_datetime.time())
+                    day = datetime.combine(day.date(), time=adafruit_datetime.time(tzinfo=timezone))
                     if day >= event.end_time:
                         break
                     else:
@@ -323,10 +360,8 @@ def parse_ical(text: str, mon: int, year: int) -> list[Event]:
                         duplicate.start_time = day
                         duplicate.end_time = event.end_time
                         duplicate.attendent = event.attendent
-                        if duplicate.start_time.year == year and duplicate.start_time.month == mon:
-                            events.append(duplicate)
-                        else:
-                            pass
+                        duplicate.is_important = event.is_important
+                        append_event(events, duplicate, current_day)
                     add_days += 1
         m = event_frequency.match(line)
         if m is not None and event is not None:
@@ -354,6 +389,21 @@ def parse_ical(text: str, mon: int, year: int) -> list[Event]:
         m = event_summary.match(line)
         if m is not None and event is not None:
             event.title = m.group(1)
+        m = event_color.match(line)
+        if m is not None and event is not None:
+            if int(m.group(1)[:2], 16) > 128 and int(m.group(1)[2:4], 16) < 64 and int(m.group(1)[4:6], 16) < 64:
+                event.is_important = True
+        m = event_exdate.match(line)
+        if m is not None and event is not None:
+            print("found exclude dates: " + m.group(1))
+            ex_dates = m.group(1).split(",")
+            ex_dt_times = []
+            for ex_dt in ex_dates:
+                dm = event_date.match(ex_dt)
+                if dm is not None:
+                    dt = parse_date(dm, 1, 2)
+                    ex_dt_times.append(dt)
+            event.exclude = ex_dt_times
     print(str(len(events)) + " Events")
     events.sort(key=start_time)
     return events
@@ -363,9 +413,9 @@ def parse_date(m: re.Match[str], date_group_num: int = 3, time_group_num: int = 
     time = None
     if m.group(time_group_num) is not None:
         print("time: " + m.group(time_group_num))
-        time = datetime(int(m.group(date_group_num)[:4]), int(m.group(date_group_num)[4:6]), int(m.group(date_group_num)[6:]), int(m.group(time_group_num)[:2]), int(m.group(time_group_num)[2:4]), int(m.group(time_group_num)[4:6]))
+        time = datetime(int(m.group(date_group_num)[:4]), int(m.group(date_group_num)[4:6]), int(m.group(date_group_num)[6:]), int(m.group(time_group_num)[:2]), int(m.group(time_group_num)[2:4]), int(m.group(time_group_num)[4:6]), tzinfo=timezone)
     else:
-        time = datetime(int(m.group(date_group_num)[:4]), int(m.group(date_group_num)[4:6]), int(m.group(date_group_num)[6:]))
+        time = datetime(int(m.group(date_group_num)[:4]), int(m.group(date_group_num)[4:6]), int(m.group(date_group_num)[6:]), tzinfo=timezone)
     return time
 
 label_person_font = bitmap_font.load_font("/TitilliumWeb-Black-24.bdf")
@@ -386,22 +436,37 @@ print(f"Connected to {os.getenv('CIRCUITPY_WIFI_SSID')}!")
 
 pool = socketpool.SocketPool(wifi.radio)
 requests = adafruit_requests.Session(pool, ssl.create_default_context())
-ntp = adafruit_ntp.NTP(pool, tz_offset=2)
-
+ntp = adafruit_ntp.NTP(pool)
+timezone = tzinfo=adafruit_datetime.timezone(timedelta(hours=2), "Europe/Berlin")
+current_date = datetime(ntp.datetime.tm_year, ntp.datetime.tm_mon, ntp.datetime.tm_mday, tzinfo=timezone)
 
 print("fetching " + os.getenv('CALENDAR_MAIN', "-"))
 calTxt = requests.get(os.getenv('CALENDAR_MAIN', "-"), stream=True).text
-
-termine = parse_ical(calTxt, ntp.datetime.tm_mon, ntp.datetime.tm_year)
+termine = parse_ical(calTxt, current_date.combine(current_date.date(), adafruit_datetime.time(tzinfo=timezone)))
+calTxt = None
+gc.collect()
 
 stundenplanTxt = requests.get(os.getenv('CALENDAR_STUNDENPLAN', '-'), stream=True).text
-stundenplan = parse_ical(stundenplanTxt, ntp.datetime.tm_mon, ntp.datetime.tm_year)
+stundenplan = parse_ical(stundenplanTxt, current_date.combine(current_date.date(), adafruit_datetime.time(tzinfo=timezone)))
+stundenplanTxt = None
+gc.collect()
 
 ferienTxt = requests.get(os.getenv('CALENDAR_FERIEN', '-'), stream=True).text
-ferien = parse_ical(ferienTxt, ntp.datetime.tm_mon, ntp.datetime.tm_year)
+ferien = parse_ical(ferienTxt, current_date.combine(current_date.date(), adafruit_datetime.time(tzinfo=timezone)))
+feiertage = parse_ical(requests.get(os.getenv('CALENDAR_FEIERTAGE', '-'), stream=True).text, current_date.combine(current_date.date(), adafruit_datetime.time(tzinfo=timezone)))
+ferienTxt = None
+gc.collect()
+
 for fer in ferien:
-    fer.attendent = ["LU"]
+    fer.attendent = []
     termine.append(fer)
+
+for feiertag in feiertage:
+    feiertag.attendent = []
+    ferien.append(feiertag)
+    termine.append(feiertag)
+
+ferien.sort(key=start_time)
 termine.sort(key=start_time)
 
 weather_url = "https://api.openweathermap.org/data/3.0/onecall?lat=" + os.getenv("OPENWEATHER_LAT", "-") + "&lon=" + os.getenv("OPENWEATHER_LON", "-") + "&exclude=minutely,hourly,current&units=metric&appid=" + os.getenv("OPENWEATHER_API_KEY", "-")
@@ -425,11 +490,7 @@ display_bus = displayio.FourWire(
 )
 time.sleep(1)
 
-#display = adafruit_il0398.IL0398(
 display = ws7in5b.WS7IN5B(
-#display = adafruit_il0373.IL0373(
-#display = adafruit_uc8151d.UC8151D(
-#display = adafruit_ek79686.EK79686(
     display_bus,
     width=800,
     height=480,
@@ -457,7 +518,6 @@ header_group = show_header(ntp, 10)
 # Show it
 g.append(header_group)
 
-current_date = datetime(ntp.datetime.tm_year, ntp.datetime.tm_mon, ntp.datetime.tm_mday)
 delta = timedelta(days=1)
 tomorrow_date = current_date + delta
 tag = zeige_tag(current_date, 'Heute')
@@ -470,35 +530,59 @@ tag2.x = 250
 tag2.y = 60
 g.append(tag2)
 
-test_event = Event()
-test_event.start_time = adafruit_datetime.datetime(ntp.datetime.tm_year, ntp.datetime.tm_mon, ntp.datetime.tm_mday, 0, 0)
-test_event.attendent = ["AS", "AN", "LU"]
-test_event.title = "Test mit super langem Titel"
-
-termine.append(test_event)
-
 x = 10
 
-for date in [current_date, tomorrow_date]:
+for cdate in [current_date, tomorrow_date]:
     y = 90
+    termine_count = 0
     for termin in termine:
-        if termin.start_time.day == date.day and (date.time() is None or (date.time().hour == 0 and date.time().minute == 0)):
-            termin2 = zeige_termin(termin.start_time.time(), termin.attendent, termin.title)
+        if termin.start_time.date() == cdate and (termin.start_time.time() is None or (termin.start_time.hour == 0 and termin.start_time.minute == 0)):
+            termin2 = zeige_termin(termin.start_time.time(), termin.attendent, termin.title, termin.is_important)
             termin2.y = y
             termin2.x = x
             y += 45
             g.append(termin2)
+            termine_count += 1
     # Stundenplan
-
+    last_start = None
+    isFerien = False
+    for fer in ferien:
+        if fer.start_time.date() == cdate.date():
+            isFerien = True
+    if not isFerien:
+        for stunde in stundenplan:
+            if stunde.start_time.date() == cdate:
+                if last_start is not None and stunde.start_time.timestamp() - last_start.timestamp() > 60:
+                    p_rect = dithered_rectangle(45, 0, 218 - 45, 8, fill=0x000000, opacity=0.25)
+                    p_rect.x = x + 45
+                    p_rect.y = y
+                    g.append(p_rect)
+                    y += 8
+                stunde_eintrag = zeige_stunde(stunde.title, stunde.is_important)
+                stunde_eintrag.y = y
+                stunde_eintrag.x = x
+                g.append(stunde_eintrag)
+                if last_start is None:
+                    pers_label = zeige_person_label("LU")
+                    pers_label.y = y
+                    pers_label.x = x
+                    g.append(pers_label)
+                last_start = stunde.end_time
+                y += 36
+                termine_count += 1
+        y += 8
+    else:
+        print("Ferien am " + str(cdate))
     # normale Termine
     for termin in termine:
-        if termin.start_time.day == date.day and date.time() is not None and date.time().hour != 0 and date.time().minute != 0:
-            termin2 = zeige_termin(termin.start_time.time(), termin.attendent, termin.title)
+        if termin.start_time.date() == cdate and termin.start_time.time() is not None and (termin.start_time.hour != 0 or termin.start_time.minute != 0):
+            termin2 = zeige_termin(termin.start_time.time(), termin.attendent, termin.title, termin.is_important)
             termin2.y = y
             termin2.x = x
             y += 45
             g.append(termin2)
-    if len(termine) == 0:
+            termine_count += 1
+    if termine_count == 0:
         no_data = displayio.OnDiskBitmap("smile.bmp")
         no_data_sprite = displayio.TileGrid(no_data, pixel_shader=no_data.pixel_shader)
         no_data_sprite.pixel_shader.make_transparent(0)
@@ -512,7 +596,7 @@ for date in [current_date, tomorrow_date]:
         g.append(no_data_label)
     x += 250
 
-cal = zeige_kalender(current_date.month, current_date.year, current_date.day, ["LU", "AS", "AN"], termine, ferien)
+cal = zeige_kalender(current_date.month, current_date.year, current_date.day, ["AS", "LU", "AN"], termine, ferien)
 cal.x = 500
 cal.y = 200
 g.append(cal)
@@ -551,7 +635,7 @@ bat_label.anchored_position = (30, 15)
 g.append(bat_label)
 
 weather_sprite_sheet = displayio.OnDiskBitmap("wetter.bmp")
-weather_symbol = displayio.TileGrid(weather_sprite_sheet, pixel_shader=weather_sprite_sheet.pixel_shader, width=3, height=1, tile_width=100, tile_height=100)
+weather_symbol = displayio.TileGrid(weather_sprite_sheet, pixel_shader=weather_sprite_sheet.pixel_shader, width=3, height=1, tile_width=70, tile_height=70)
 weather_sprite_sheet.pixel_shader.make_transparent(0)
 symbolmap = ["01d", "02d", "03d", "04d", "09d", "10d", "11d", "13d", "50d"]
 
@@ -559,13 +643,13 @@ for day in range(0, 3):
     icon = weather["daily"][day]["weather"][0]["icon"]
     print("day " + str(day) + ": " + str(weather["daily"][day]))
     weather_symbol[day] = symbolmap.index(icon)
-    temp_label = label.Label(day_header_font, text=str(int(weather["daily"][day]["temp"]["min"])) + " / " + str(int(weather["daily"][day]["temp"]["max"])) + "°C", color=0x000000)
+    temp_label = label.Label(day_header_font, text=str(int(weather["daily"][day]["temp"]["min"])) + " / " + str(int(weather["daily"][day]["temp"]["max"])), color=0x000000)
     temp_label.anchor_point = (0.5, 0.0)
-    temp_label.anchored_position = (550 + day * 100, 160)
+    temp_label.anchored_position = (583 + day * 70, 130)
     g.append(temp_label)
 
-weather_symbol.x = 500
-weather_symbol.y = 60
+weather_symbol.x = 545
+weather_symbol.y = 70
 g.append(weather_symbol)
 
 
