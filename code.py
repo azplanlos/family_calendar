@@ -2,6 +2,9 @@ import os
 import gc
 import ssl
 import time
+import sys
+sys.path.append('/lib/circuitpython_cest_adjuster')
+
 
 import adafruit_ntp
 import adafruit_requests
@@ -21,6 +24,7 @@ from adafruit_bitmap_font import bitmap_font
 from adafruit_display_shapes.rect import Rect
 from adafruit_display_shapes.circle import Circle
 from adafruit_datetime import datetime, date, timedelta
+import cedargrove_dst_adjuster
 
 import ws7in5b
 
@@ -443,8 +447,9 @@ print(f"Connected to {os.getenv('CIRCUITPY_WIFI_SSID')}!")
 pool = socketpool.SocketPool(wifi.radio)
 requests = adafruit_requests.Session(pool, ssl.create_default_context())
 ntp = adafruit_ntp.NTP(pool)
-timezone = tzinfo=adafruit_datetime.timezone(timedelta(hours=2), "Europe/Berlin")
-current_date = datetime(ntp.datetime.tm_year, ntp.datetime.tm_mon, ntp.datetime.tm_mday, tzinfo=timezone)
+(ntpdt, isDst) = cedargrove_dst_adjuster.adjust_dst(ntp.datetime)
+timezone = adafruit_datetime.timezone(offset=timedelta(hours=1 + (1 if isDst else 0)), name="Europe/Berlin")
+current_date = datetime(ntp.datetime.tm_year, ntp.datetime.tm_mon, ntp.datetime.tm_mday, ntp.datetime.tm_hour + 1 + (1 if isDst else 0), ntp.datetime.tm_min, tzinfo=timezone)
 
 print("fetching " + os.getenv('CALENDAR_MAIN', "-"))
 calTxt = requests.get(os.getenv('CALENDAR_MAIN', "-"), stream=True).text
@@ -658,6 +663,11 @@ weather_symbol.x = 545
 weather_symbol.y = 70
 g.append(weather_symbol)
 
+
+print("is DST: " + str(isDst))
+print("in DST: " + str(ntpdt))
+print("current date: " + str(current_date.ctime()))
+print("tzone: " + str(timezone))
 
 display.show(g)
 
