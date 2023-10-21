@@ -329,6 +329,12 @@ def parse_ical(text: str, current_day: datetime) -> list[Event]:
                         dt = event.start_time + adafruit_datetime.timedelta(days=count*interval)
                     elif event.frequency == Frequency.WEEKLY:
                         dt = event.start_time + timedelta(weeks=count*interval)
+                    elif event.frequency == Frequency.MONTHLY and (event.start_time.month != current_date.month or event.start_time.year != current_date.year):
+                        dt = adafruit_datetime.datetime(current_day.year, current_date.month, event.start_time.day, event.start_time.hour, event.start_time.minute, tzinfo=timezone)
+                    elif event.frequency == Frequency.YEARLY and event.start_time.year != current_date.year:
+                        dt = adafruit_datetime.datetime(current_date.year, event.start_time.month, event.start_time.day, event.start_time.hour, event.start_time.minute, tzinfo=timezone)
+                    else:
+                        break
                     duplicate = Event()
                     duplicate.title = event.title
                     duplicate.start_time = dt
@@ -602,7 +608,7 @@ cal.y = 200
 g.append(cal)
 
 # Set text, font, and color
-text = 'letzte Aktualisierung: ' + prefix_date(ntp.datetime.tm_mday) + '.' + prefix_date(ntp.datetime.tm_mon) + '.' + str(ntp.datetime.tm_year) + ' ' + prefix_date(ntp.datetime.tm_hour) + ":" + prefix_date(ntp.datetime.tm_min)
+text = 'letzte Aktualisierung: ' + prefix_date(current_date.day) + '.' + prefix_date(current_date.month) + '.' + str(current_date.year) + ' ' + prefix_date(current_date.hour) + ":" + prefix_date(current_date.minute)
 font = terminalio.FONT
 color = 0x000000
 
@@ -667,7 +673,7 @@ pixels[0] = (0, 10, 0)
 print("img ok")
 pixels.brightness = 0.0
 
-time_alarm = alarm.time.TimeAlarm(monotonic_time=time.monotonic() + 6 * 60 * 60) # type: ignore
+time_alarm = alarm.time.TimeAlarm(monotonic_time=time.monotonic() + 4 * 60 * 60) # type: ignore
 # Exit the program, and then deep sleep until the alarm wakes us.
 alarm.exit_and_deep_sleep_until_alarms(time_alarm)
 # Does not return, so we never get here.
