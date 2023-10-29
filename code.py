@@ -671,7 +671,6 @@ print("tzone: " + str(timezone))
 
 display.show(g)
 
-
 display.refresh()
     
 while display.busy:
@@ -681,9 +680,10 @@ pixels[0] = (0, 10, 0)
 
 # display is now updated
 print("img ok")
+time.sleep(20)
 pixels.brightness = 0.0
 
-time_alarm = alarm.time.TimeAlarm(monotonic_time=time.monotonic() + 4 * 60 * 60) # type: ignore
+time_alarm = alarm.time.TimeAlarm(monotonic_time=time.monotonic() + 6 * 60 * 60) # type: ignore
 # Exit the program, and then deep sleep until the alarm wakes us.
 alarm.exit_and_deep_sleep_until_alarms(time_alarm)
 # Does not return, so we never get here.
