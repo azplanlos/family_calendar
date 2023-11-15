@@ -1,0 +1,3 @@
+[submodule "lib/circuitpython_cest_adjuster"]
+	path = lib/circuitpython_cest_adjuster
+	url = git@github.com:azplanlos/CircuitPython_CEST_Adjuster.git
