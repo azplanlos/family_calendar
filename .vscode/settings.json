@@ -8,7 +8,8 @@
     "python.analysis.extraPaths": [
         "c:\\Users\\andi\\.vscode\\extensions\\wmerkens.vscode-circuitpython-v2-0.2.8\\boards\\0x303A\\0x8117",
         "c:\\Users\\andi\\.vscode\\extensions\\wmerkens.vscode-circuitpython-v2-0.2.8\\stubs",
-        "c:\\Users\\andi\\AppData\\Roaming\\Code\\User\\globalStorage\\wmerkens.vscode-circuitpython-v2\\bundle\\20241214\\adafruit-circuitpython-bundle-py-20241214\\lib"
+        "c:\\Users\\andi\\AppData\\Roaming\\Code\\User\\globalStorage\\wmerkens.vscode-circuitpython-v2\\bundle\\20241214\\adafruit-circuitpython-bundle-py-20241214\\lib",
+        "./lib/circuitpython_cest_adjuster"
     ],
     "circuitpython.board.version": null,
     "circuitpython.board.vid": "0x303A",
