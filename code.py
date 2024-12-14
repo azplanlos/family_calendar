@@ -160,15 +160,21 @@ def zeige_termin(startzeit: adafruit_datetime.time | None, person: list[str], ti
     rect = Rect(max(px + (len(person) - 1) * 36, 0), 0, max(200 - max((len(person) - 1) * 36, -18), 10), 36, fill=0xFF0000, outline=0x000000)
     if startzeit is not None and (startzeit.hour > 0 or startzeit.minute > 0):
         px = 64
+        time_color = 0x000000
         if not is_important:
             label_color = 0x000000
             rect = Rect(px, 0, 218 - px, 36, outline=0x000000)
+        else:
+            time_color = 0xFF0000
+            rect = Rect(px, 0, 218 - px, 36, fill=0xFF0000, outline=0x000000)
         timestr = prefix_date(startzeit.hour) + ":" + prefix_date(startzeit.minute)
-        time_label = label.Label(default_font, text=timestr, color=label_color)
+        time_label = label.Label(default_font, text=timestr, color=time_color)
         time_label.anchor_point = (0.0, 0.5)
         time_label.anchored_position = (0, 18)
         termin_group.append(time_label)
     termin_group.append(rect)
+    if "AS" in person and "AN" in person and "LU" in person:
+        person = ["A"]
     for att in person:
         pg = zeige_person_label(att)
         pg.x = px - 18
@@ -233,7 +239,7 @@ def zeige_kalender(mon: int, year: int, current_day: int, persons: list[str], te
         rect = dithered_rectangle(i * width, y_offest, width, height, fill=0x000000, opacity=0.75)
         calendar_group.append(rect)
     last_day = 1
-    for d in range(0, 30):
+    for d in range(0, 31):
         cdt = dt + timedelta(days=d)
         if cdt.month == mon:
             row = int((d - first_monday.day) / 7 + 1)
@@ -324,6 +330,7 @@ def parse_ical(text: str, current_day: datetime) -> list[Event]:
                 count = 1
                 dt = event.start_time
                 while True:
+                    print(".")
                     if (hasattr(event, 'count') and event.count is not None and event.count < count) or (hasattr(event, 'until') and event.until is not None and event.until < dt) or (dt > datetime(year=current_day.year, month=current_day.month, day=1, tzinfo=timezone) + timedelta(days=31)):
                         break
                     interval = 1
@@ -336,7 +343,7 @@ def parse_ical(text: str, current_day: datetime) -> list[Event]:
                     elif event.frequency == Frequency.MONTHLY and (event.start_time.month != current_date.month or event.start_time.year != current_date.year):
                         dt = adafruit_datetime.datetime(current_day.year, current_date.month, event.start_time.day, event.start_time.hour, event.start_time.minute, tzinfo=timezone)
                     elif event.frequency == Frequency.YEARLY and event.start_time.year != current_date.year:
-                        dt = adafruit_datetime.datetime(current_date.year, event.start_time.month, event.start_time.day, event.start_time.hour, event.start_time.minute, tzinfo=timezone)
+                        dt = adafruit_datetime.datetime(event.start_time.year + count - 1, event.start_time.month, event.start_time.day, event.start_time.hour, event.start_time.minute, tzinfo=timezone)
                     else:
                         break
                     duplicate = Event()
@@ -669,18 +676,24 @@ print("in DST: " + str(ntpdt))
 print("current date: " + str(current_date.ctime()))
 print("tzone: " + str(timezone))
 
-display.show(g)
+secondsWaited = 0
+turns = 0
 
-display.refresh()
-    
-while display.busy:
-    pass
+while secondsWaited < 5 and turns < 5:
+    display.show(g)
+    display.refresh()
+    time.sleep(2)
+    turns += 1
+    secondsWaited = 0
+    while display.busy:
+        time.sleep(1)
+        secondsWaited += 1
+    time.sleep(20)
 
 pixels[0] = (0, 10, 0)
 
 # display is now updated
 print("img ok")
-time.sleep(20)
 pixels.brightness = 0.0
 
 time_alarm = alarm.time.TimeAlarm(monotonic_time=time.monotonic() + 6 * 60 * 60) # type: ignore
